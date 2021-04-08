@@ -121,7 +121,10 @@ func newOIDCAuthProvider(clusterAddress string, cfg map[string]string, persister
 
 	// Check cache for existing provider.
 	if provider, ok := cache.getClient(clusterAddress, issuer, clientID); ok {
-		return provider, nil
+		useCache := provider.updateTokenAndCheckMatch(cfg)
+		if useCache {
+			return provider, nil
+		}
 	}
 
 	if len(cfg[cfgExtraScopes]) > 0 {
@@ -184,6 +187,32 @@ func (p *oidcAuthProvider) WrapTransport(rt http.RoundTripper) http.RoundTripper
 
 func (p *oidcAuthProvider) Login() error {
 	return errors.New("not yet implemented")
+}
+
+// UpdateTokenAndCheckMatch takes an auth configuration map and updates the token of its cfg. It also checks if it matches the given config.
+func (p *oidcAuthProvider) updateTokenAndCheckMatch(cfg map[string]string) bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	// if id-token in cfg then update the cfg in provider
+	idToken := cfg[cfgIDToken]
+	if idToken != "" {
+		p.cfg[cfgIDToken] = idToken
+	}
+
+	// if refresh-token in cfg then update the cfg in provider
+	refreshToken := cfg[cfgRefreshToken]
+	if refreshToken != "" {
+		p.cfg[cfgRefreshToken] = refreshToken
+	}
+
+	for _, c := range []string{cfgClientSecret, cfgCertificateAuthority, cfgCertificateAuthorityData} {
+		if cfg[c] != "" && cfg[c] != p.cfg[c] {
+			return false
+		}
+	}
+
+	return true
 }
 
 type roundTripper struct {
@@ -263,7 +292,7 @@ func (p *oidcAuthProvider) idToken() (string, error) {
 		// providers (Okta) don't return this value.
 		//
 		// See https://github.com/kubernetes/kubernetes/issues/36847
-		return "", fmt.Errorf("token response did not contain an id_token, either the scope \"openid\" wasn't requested upon login, or the provider doesn't support id_tokens as part of the refresh response")
+		return "", fmt.Errorf("token response did not contain an id_token, either the scope \"openid\" wasn't requested upon login, or the provider doesn't support id_token as part of the refresh response")
 	}
 
 	// Create a new config to persist.

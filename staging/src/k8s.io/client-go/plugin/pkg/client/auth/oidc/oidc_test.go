@@ -156,3 +156,36 @@ func assertCacheLen(t *testing.T, cache *clientCache, length int) {
 		t.Errorf("expected cache length %d got %d", length, len(cache.cache))
 	}
 }
+
+func TestUpdateTokenAndCheckMatch(t *testing.T) {
+	cache := newClientCache()
+	cfg := make(map[string]string)
+	cfg[cfgIssuerURL] = "issuer1"
+	cfg[cfgClientID] = "id1"
+	cli := &oidcAuthProvider{cfg: cfg}
+	_ = cache.setClient("cluster1", "issuer1", "id1", cli)
+
+	newcfg := make(map[string]string)
+	newcfg[cfgIssuerURL] = "issuer1"
+	newcfg[cfgClientID] = "id1"
+	newcfg[cfgIDToken] = "id_token_here"
+	newcfg[cfgRefreshToken] = "refresh_token_here"
+
+	match := cli.updateTokenAndCheckMatch(newcfg)
+	if !match {
+		t.Fatal("got unmatch when check with new config only contains new token")
+	}
+	if cli.cfg[cfgIDToken] != "id_token_here" {
+		t.Fatal("set id token but didn't get correct value")
+	}
+	if cli.cfg[cfgRefreshToken] != "refresh_token_here" {
+		t.Fatal("set refresh token but didn't get correct value")
+	}
+
+	newcfg[cfgClientSecret] = "another_secret"
+	newcfg[cfgCertificateAuthority] = "another_ca"
+	match = cli.updateTokenAndCheckMatch(newcfg)
+	if match {
+		t.Fatal("got match when check with new config that contains different CA")
+	}
+}
